@@ -26,9 +26,12 @@ export default function Home() {
   const [gameTimeLeft, setGameTimeLeft] = useState(30);
 
   const ACTION_HOLD_TIME = 5000; // 5 seconds for post-hit
-  const RULES_TIME = 10000; // 7 seconds
-  const GAME_TIME = 60000; // 30 seconds
-  const TARGET_RADIUS = 0.07; // normalized (0→1)
+  const RULES_TIME = 10000; // 10 seconds
+  const GAME_TIME = 60000; // 60 seconds
+
+  // Detect mobile and adjust target size
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  const TARGET_RADIUS = isMobile ? 0.12 : 0.07; // bigger target for mobile
 
   // Initialize hand model and camera
   useEffect(() => {
@@ -91,7 +94,7 @@ export default function Home() {
 
         // Draw target
         if (phaseRef.current === "game") {
-          ctx.fillStyle = "rgba(255,0,0,0.6)";
+          ctx.fillStyle = isMobile ? "rgba(255,0,0,0.5)" : "rgba(255,0,0,0.6)";
           ctx.beginPath();
           ctx.arc(target.x * ctx.canvas.width, target.y * ctx.canvas.height, TARGET_RADIUS * ctx.canvas.width, 0, 2 * Math.PI);
           ctx.fill();
@@ -154,7 +157,7 @@ export default function Home() {
       phaseRef.current = "game";
       phaseStartRef.current = now;
       gameStartRef.current = now;
-      setGameTimeLeft(30);
+      setGameTimeLeft(60);
       setStatus("🎮 Game started! Move your wrist to the target.");
     }
   };
@@ -165,7 +168,7 @@ export default function Home() {
     const elapsed = now - gameStartRef.current;
     setGameTimeLeft(Math.max(0, Math.ceil((GAME_TIME - elapsed) / 1000)));
 
-    // Game ends after 30s
+    // Game ends after GAME_TIME
     if (elapsed >= GAME_TIME) {
       phaseRef.current = "finished";
       setStatus(`🏁 Game over! Final Score: ${score}`);
