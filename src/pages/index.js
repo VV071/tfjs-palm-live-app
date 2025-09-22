@@ -12,6 +12,7 @@ export default function Home() {
   const canvasRef = useRef(null);
   const handRef = useRef(null);
   const rafRef = useRef(null);
+  const frameCountRef = useRef(0); // for skipping frames on mobile
 
   const phaseRef = useRef("idle"); // idle | rules | game | postHit | finished
   const phaseStartRef = useRef(0);
@@ -29,7 +30,7 @@ export default function Home() {
   const RULES_TIME = 10000; // 10 seconds
   const GAME_TIME = 60000; // 60 seconds
 
-  // Detect mobile and adjust target size
+  // Detect mobile and adjust target size & camera
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
   const TARGET_RADIUS = isMobile ? 0.12 : 0.07; // bigger target for mobile
 
@@ -43,6 +44,7 @@ export default function Home() {
         const fileset = await FilesetResolver.forVisionTasks(
           "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
         );
+
         handRef.current = await HandLandmarker.createFromOptions(fileset, {
           baseOptions: { modelAssetPath: "/models/hand_landmarker.task" },
           runningMode: "VIDEO",
@@ -51,7 +53,9 @@ export default function Home() {
           minTrackingConfidence: 0.5,
         });
 
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: isMobile ? 320 : 640, height: isMobile ? 240 : 480 },
+        });
         videoRef.current.srcObject = stream;
         await new Promise(resolve => (videoRef.current.onloadedmetadata = () => resolve(true)));
         await videoRef.current.play();
@@ -87,6 +91,14 @@ export default function Home() {
         return;
       }
 
+      frameCountRef.current += 1;
+
+      // Skip every other frame on mobile for performance
+      if (isMobile && frameCountRef.current % 2 !== 0) {
+        rafRef.current = requestAnimationFrame(detectLoop);
+        return;
+      }
+
       try {
         const results = await handRef.current.detectForVideo(videoRef.current, performance.now());
         const ctx = canvasRef.current.getContext("2d");
@@ -105,7 +117,7 @@ export default function Home() {
           const landmarks = results.landmarks[0].map(p => ({ x: p.x, y: p.y, z: p.z || 0 }));
           drawLandmarks(ctx, landmarks);
 
-          const wrist = landmarks[0]; // landmark 0 is wrist
+          const wrist = landmarks[0];
 
           switch (phaseRef.current) {
             case "rules":
@@ -119,7 +131,7 @@ export default function Home() {
               break;
           }
         } else {
-          if (phaseRef.current === "rules") setRulesCountdown(7); // reset rules countdown if no hand
+          if (phaseRef.current === "rules") setRulesCountdown(7);
         }
       } catch (err) {
         console.warn("Frame skipped:", err);
@@ -168,14 +180,12 @@ export default function Home() {
     const elapsed = now - gameStartRef.current;
     setGameTimeLeft(Math.max(0, Math.ceil((GAME_TIME - elapsed) / 1000)));
 
-    // Game ends after GAME_TIME
     if (elapsed >= GAME_TIME) {
       phaseRef.current = "finished";
       setStatus(`🏁 Game over! Final Score: ${score}`);
       return;
     }
 
-    // Check if wrist hits target
     const dx = wrist.x - target.x;
     const dy = wrist.y - target.y;
     if (Math.sqrt(dx * dx + dy * dy) < TARGET_RADIUS) {
@@ -244,52 +254,27 @@ export default function Home() {
     <div className="min-h-screen bg-gradient-to-br from-pink-500 to-indigo-600 flex items-center justify-center p-6">
       <Card className="max-w-lg w-full shadow-xl relative">
         <CardHeader>
-          <CardTitle className="text-center text-2xl font-bold">
-            PalmPay Live Demo 🌟
-          </CardTitle>
+          <CardTitle className="text-center text-2xl font-bold">PalmPay Live Demo 🌟</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col items-center gap-4">
           <div className="relative w-full">
-            <video
-              ref={videoRef}
-              className="rounded-lg w-full"
-              autoPlay
-              muted
-              playsInline
-            />
-            <canvas
-              ref={canvasRef}
-              className="absolute left-0 top-0 w-full h-full pointer-events-none"
-            />
+            <video ref={videoRef} className="rounded-lg w-full" autoPlay muted playsInline />
+            <canvas ref={canvasRef} className="absolute left-0 top-0 w-full h-full pointer-events-none" />
           </div>
           <p className="text-gray-200 text-center">{status}</p>
           {phaseRef.current === "rules" && (
-            <p className="text-yellow-300 text-center font-bold">
-              Rules Countdown: {rulesCountdown}s
-            </p>
+            <p className="text-yellow-300 text-center font-bold">Rules Countdown: {rulesCountdown}s</p>
           )}
           {phaseRef.current === "game" && (
-            <p className="text-green-300 text-center font-bold">
-              Game Time Left: {gameTimeLeft}s | Score: {score}
-            </p>
+            <p className="text-green-300 text-center font-bold">Game Time Left: {gameTimeLeft}s | Score: {score}</p>
           )}
           {(phaseRef.current === "postHit" || phaseRef.current === "game") && (
             <div className="w-full bg-gray-200 h-2 rounded">
-              <div
-                className="bg-purple-600 h-2 rounded"
-                style={{ width: `${Math.min(progress, 1) * 100}%` }}
-              />
+              <div className="bg-purple-600 h-2 rounded" style={{ width: `${Math.min(progress, 1) * 100}%` }} />
             </div>
           )}
           {phaseRef.current === "idle" && (
-            <Button
-              className="mt-4"
-              onClick={() => {
-                phaseRef.current = "rules";
-                phaseStartRef.current = performance.now();
-                setRulesCountdown(7);
-              }}
-            >
+            <Button className="mt-4" onClick={() => { phaseRef.current = "rules"; phaseStartRef.current = performance.now(); setRulesCountdown(7); }}>
               🖐️ Start Palm Game
             </Button>
           )}
